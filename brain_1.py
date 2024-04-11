@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import csv
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import CountVectorizer
 from flask import Flask, jsonify
 import requests
 
@@ -102,28 +103,34 @@ movie_ratings_pivot.fillna(0, inplace=True)
 # Calculate cosine similarity between movies based on their genre ratings
 movie_similarity = cosine_similarity(movie_ratings_pivot)
 
+# Function to preprocess latest movies before calculating similarity
+def preprocess_latest_movies(latest_movies):
+    # Concatenate relevant features for each movie (e.g., title, overview, genres)
+    movie_descriptions = [f"{movie['title']} {movie.get('overview', '')} {' '.join(movie.get('genres', []))}" for movie in latest_movies]
+
+    # Vectorize the movie descriptions
+    vectorizer = CountVectorizer(stop_words='english')
+    movie_vectors = vectorizer.fit_transform(movie_descriptions)
+
+    return movie_vectors
+
 # Function to recommend movies based on a list of genres
 def recommend_movies_by_genres(genres, latest_movies, num_recommendations=10):
     # Extract titles of latest movies
     latest_movie_titles = [movie['title'] for movie in latest_movies]
 
-    # Filter movies that match the given genres
-    filtered_movies = df[df[genres].sum(axis=1) == len(genres)]
-
-    # Print the total number of movies being considered for similarity calculation
-    total_movies = len(filtered_movies)
-    print(f"Total movies considered for similarity calculation: {total_movies}")
+    # Preprocess latest movies before calculating similarity
+    movie_vectors = preprocess_latest_movies(latest_movies)
 
     # Calculate cosine similarity between movies based on their genre ratings
-    movie_ratings = filtered_movies[genres]
-    movie_similarity = cosine_similarity(movie_ratings)
+    movie_similarity = cosine_similarity(movie_vectors)
 
     # Select the movie with the highest average similarity score
     avg_similarity = movie_similarity.mean(axis=1)
     top_indices = avg_similarity.argsort()[::-1][:num_recommendations]
 
-    # Get the titles and ratings of the top recommended movies
-    recommended_movies = df.iloc[top_indices][['title', 'rating']]
+    # Get the titles of the top recommended movies
+    recommended_movies = [latest_movies[i]['title'] for i in top_indices]
 
     return recommended_movies, latest_movie_titles
 
@@ -160,7 +167,7 @@ def get_recommendations():
 
     # Prepare response with recommended movies and latest movie titles
     response_data = {
-        'recommended_movies': recommended_movies.to_dict(orient='records'),
+        'recommended_movies': recommended_movies,
         'latest_movie_titles': latest_movie_titles
     }
 
