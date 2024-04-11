@@ -103,7 +103,10 @@ movie_ratings_pivot.fillna(0, inplace=True)
 movie_similarity = cosine_similarity(movie_ratings_pivot)
 
 # Function to recommend movies based on a list of genres
-def recommend_movies_by_genres(genres, num_recommendations=10):
+def recommend_movies_by_genres(genres, latest_movies, num_recommendations=10):
+    # Extract titles of latest movies
+    latest_movie_titles = [movie['title'] for movie in latest_movies]
+
     # Filter movies that match the given genres
     filtered_movies = df[df[genres].sum(axis=1) == len(genres)]
 
@@ -119,16 +122,58 @@ def recommend_movies_by_genres(genres, num_recommendations=10):
     avg_similarity = movie_similarity.mean(axis=1)
     top_indices = avg_similarity.argsort()[::-1][:num_recommendations]
 
-    # Get the titles of the top recommended movies
-    recommended_movies = df.iloc[top_indices]['title']
+    # Get the titles and ratings of the top recommended movies
+    recommended_movies = df.iloc[top_indices][['title', 'rating']]
 
-    return recommended_movies
+    return recommended_movies, latest_movie_titles
+
+# Read API key from text file, no leaking keys
+keys_file = open("keys.txt")
+lines = keys_file.readlines()
+API_KEY = lines[0].rstrip()
+
+# Initialize Flask application
+app = Flask(__name__)
+
+# Function to fetch latest movies from an external API
+def fetch_latest_movies():
+    # Example API call to fetch latest movies from The Movie Database (TMDB) API
+    response = requests.get(f'https://api.themoviedb.org/3/movie/now_playing?api_key={API_KEY}')
+    print(response.json())
+    latest_movies = response.json().get('results', [])  # Access 'results' key safely
+    return latest_movies
+
+# Define API endpoint for recommending movies
+@app.route('/recommend_movies', methods=['GET'])
+def get_recommendations():
+    # Fetch latest movies from an external API
+    latest_movies = fetch_latest_movies()
+
+    # Specify genres for recommendation
+    genres_to_recommend = ['genres_Comedy', 'genres_Romance']  # Example list of genres
+
+    # Ensure num_recommendations is a scalar value (integer)
+    num_recommendations = 10  # Example value, you can replace it with the desired number
+    
+    # Recommend movies based on the specified genres
+    recommended_movies, latest_movie_titles = recommend_movies_by_genres(genres_to_recommend, latest_movies, num_recommendations)
+
+    # Prepare response with recommended movies and latest movie titles
+    response_data = {
+        'recommended_movies': recommended_movies.to_dict(orient='records'),
+        'latest_movie_titles': latest_movie_titles
+    }
+
+    return jsonify(response_data)
+
+if __name__ == '__main__':
+    app.run(debug=True)
 
 # Example usage: Recommend movies based on a list of genres, TODO: make this a callable function instead of hardcoding movie genres
-genres_to_recommend = ['genres_Comedy', 'genres_Romance']  # Example list of genres, nuke this
-recommended_movies = recommend_movies_by_genres(genres_to_recommend)
-print("Recommended Movies for Genres {}:\n".format(genres_to_recommend))
-print(recommended_movies)
+#genres_to_recommend = ['genres_Comedy', 'genres_Romance']  # Example list of genres, nuke this
+#recommended_movies = recommend_movies_by_genres(genres_to_recommend)
+#print("Recommended Movies for Genres {}:\n".format(genres_to_recommend))
+#print(recommended_movies)
 
 # TODO: NLP and API from https://developer.themoviedb.org/docs/getting-started to fetch latest movies accordingly.
 # TODO: Frontend for prompts.
