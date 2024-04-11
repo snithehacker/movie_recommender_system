@@ -102,15 +102,88 @@ movie_ratings_pivot.fillna(0, inplace=True)
 movie_similarity = cosine_similarity(movie_ratings_pivot)
 
 # Function to preprocess latest movies before calculating similarity
-def preprocess_latest_movies(latest_movies):
-    # Concatenate relevant features for each movie (e.g., title, overview, genres)
-    movie_descriptions = [f"{movie['title']} {movie.get('overview', '')} {' '.join(movie.get('genres', []))}" for movie in latest_movies]
+def preprocess_latest_movies(latest_movies, movie_ratings):
+    # Initialize lists to store movie descriptions and ratings
+    movie_descriptions = []
+    ratings = []
+
+    # Iterate through the latest movies
+    for movie in latest_movies:
+        # Extract relevant features (title, overview, genres) and concatenate them
+        description = f"{movie['title']} {movie.get('overview', '')} {' '.join(movie.get('genres', []))}"
+        # Check if the description is empty or contains only stop words
+        if description.strip():
+            movie_descriptions.append(description)
+            # Get the rating for the current movie ID
+            ratings.append(movie_ratings.get(str(movie['id']), 0.0))
+
+    # If all descriptions are empty or contain only stop words, return None
+    if not movie_descriptions:
+        return None
 
     # Vectorize the movie descriptions
     vectorizer = CountVectorizer(stop_words='english')
     movie_vectors = vectorizer.fit_transform(movie_descriptions)
 
-    return movie_vectors
+    # Calculate average rating for each genre
+    genre_ratings = {}
+    for movie in latest_movies:
+        for genre in movie.get('genres', []):
+            genre_ratings.setdefault(genre, []).append(movie_ratings.get(str(movie['id']), 0.0))
+
+    avg_genre_ratings = {genre: sum(ratings) / len(ratings) for genre, ratings in genre_ratings.items()}
+
+    # Create a list to store the average rating for each movie's genre
+    avg_ratings = [avg_genre_ratings.get(genre, 0.0) for movie in latest_movies for genre in movie.get('genres', [])]
+
+    # Concatenate the movie vectors with the average genre ratings
+    combined_vectors = pd.concat([pd.DataFrame(movie_vectors.toarray()), pd.Series(ratings, name='rating'), pd.Series(avg_ratings, name='avg_rating')], axis=1)
+
+    # Replace NaN values with 0
+    combined_vectors = combined_vectors.fillna(0)
+
+    return combined_vectors
+
+# Function to fetch latest movies from an external API
+def fetch_latest_movies():
+    try:
+        # Read API key from text file, no leaking keys
+        with open("keys.txt") as keys_file:
+            API_KEY = keys_file.readline().rstrip()
+
+        # Example API call to fetch latest movies from The Movie Database (TMDB) API
+        response = requests.get(f'https://api.themoviedb.org/3/movie/now_playing?api_key={API_KEY}')
+        latest_movies = response.json().get('results', [])  # Access 'results' key safely
+        return latest_movies
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching latest movies: {e}")
+        return []
+
+# Function to fetch movie ratings from the API
+def fetch_movie_ratings():
+    try:
+        # Read API key from text file, no leaking keys
+        with open("keys.txt") as keys_file:
+            API_KEY = keys_file.readline().rstrip()
+
+        # Example API call to fetch movie ratings from The Movie Database (TMDB) API
+        response = requests.get(f'https://api.themoviedb.org/3/movie/now_playing?api_key={API_KEY}')
+        data = response.json()
+
+        # Extract movie IDs and ratings from the response
+        movie_ratings = {}
+        for movie in data.get('results', []):
+            movie_id = movie.get('id')
+            rating = movie.get('vote_average')
+            if movie_id and rating:
+                movie_ratings[str(movie_id)] = rating
+        
+        # Create a pandas Series with movie IDs as index and ratings as values
+        movie_ratings_series = pd.Series(movie_ratings, name='rating')
+        return movie_ratings_series
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching movie ratings: {e}")
+        return pd.Series()  # Return an empty Series in case of an error
 
 # Function to recommend movies based on a list of genres
 def recommend_movies_by_genres(genres, latest_movies, movie_ratings, num_recommendations=10):
@@ -118,13 +191,10 @@ def recommend_movies_by_genres(genres, latest_movies, movie_ratings, num_recomme
     latest_movie_titles = [movie['title'] for movie in latest_movies]
 
     # Preprocess latest movies before calculating similarity
-    movie_vectors = preprocess_latest_movies(latest_movies)
+    combined_vectors = preprocess_latest_movies(latest_movies, movie_ratings)
 
-    # Combine genre vectors with movie ratings
-    combined_vectors = pd.concat([pd.DataFrame(movie_vectors.toarray()), movie_ratings.reset_index(drop=True)], axis=1)
-
-    # Handle missing values (NaN) in the combined vectors
-    combined_vectors = combined_vectors.fillna(0)  # Replace NaN with 0
+    if combined_vectors is None:
+        return [], latest_movie_titles
 
     # Calculate cosine similarity between movies based on their genre ratings and movie ratings
     movie_similarity = cosine_similarity(combined_vectors)
@@ -138,29 +208,8 @@ def recommend_movies_by_genres(genres, latest_movies, movie_ratings, num_recomme
 
     return recommended_movies, latest_movie_titles
 
-# (TODO)Dummy function to fetch movie ratings
-def fetch_movie_ratings():
-    # Example function to fetch movie ratings (you need to implement this)
-    # This function can fetch ratings from a database, another API, or any other source
-    # For demonstration purposes, we'll return dummy ratings here
-    movie_ratings = pd.Series([4.5, 3.8, 4.2, 3.9, 4.1, 3.7, 4.0, 4.3, 4.4, 3.6], name='rating')
-    return movie_ratings
-
-# Read API key from text file, no leaking keys
-keys_file = open("keys.txt")
-lines = keys_file.readlines()
-API_KEY = lines[0].rstrip()
-
 # Initialize Flask application
 app = Flask(__name__)
-
-# Function to fetch latest movies from an external API
-def fetch_latest_movies():
-    # Example API call to fetch latest movies from The Movie Database (TMDB) API
-    response = requests.get(f'https://api.themoviedb.org/3/movie/now_playing?api_key={API_KEY}')
-    print(response.json())
-    latest_movies = response.json().get('results', [])  # Access 'results' key safely
-    return latest_movies
 
 # Define API endpoint for recommending movies
 @app.route('/recommend_movies', methods=['GET'])
