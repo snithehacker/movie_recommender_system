@@ -176,7 +176,8 @@ def fetch_movie_ratings():
             movie_id = movie.get('id')
             rating = movie.get('vote_average')
             if movie_id and rating:
-                movie_ratings[str(movie_id)] = rating
+                adj_rating = 0.5 * rating
+                movie_ratings[str(movie_id)] = adj_rating
         
         # Create a pandas Series with movie IDs as index and ratings as values
         movie_ratings_series = pd.Series(movie_ratings, name='rating')
