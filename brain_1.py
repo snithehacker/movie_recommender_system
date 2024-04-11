@@ -89,8 +89,6 @@ print("Printing rating: \n",df.rating)
 
 print(df.columns)
 
-from sklearn.metrics.pairwise import cosine_similarity
-
 # Get genre columns
 genre_columns = [col for col in df.columns if col.startswith('genres_')]
 
@@ -115,15 +113,21 @@ def preprocess_latest_movies(latest_movies):
     return movie_vectors
 
 # Function to recommend movies based on a list of genres
-def recommend_movies_by_genres(genres, latest_movies, num_recommendations=10):
+def recommend_movies_by_genres(genres, latest_movies, movie_ratings, num_recommendations=10):
     # Extract titles of latest movies
     latest_movie_titles = [movie['title'] for movie in latest_movies]
 
     # Preprocess latest movies before calculating similarity
     movie_vectors = preprocess_latest_movies(latest_movies)
 
-    # Calculate cosine similarity between movies based on their genre ratings
-    movie_similarity = cosine_similarity(movie_vectors)
+    # Combine genre vectors with movie ratings
+    combined_vectors = pd.concat([pd.DataFrame(movie_vectors.toarray()), movie_ratings.reset_index(drop=True)], axis=1)
+
+    # Handle missing values (NaN) in the combined vectors
+    combined_vectors = combined_vectors.fillna(0)  # Replace NaN with 0
+
+    # Calculate cosine similarity between movies based on their genre ratings and movie ratings
+    movie_similarity = cosine_similarity(combined_vectors)
 
     # Select the movie with the highest average similarity score
     avg_similarity = movie_similarity.mean(axis=1)
@@ -133,6 +137,14 @@ def recommend_movies_by_genres(genres, latest_movies, num_recommendations=10):
     recommended_movies = [latest_movies[i]['title'] for i in top_indices]
 
     return recommended_movies, latest_movie_titles
+
+# (TODO)Dummy function to fetch movie ratings
+def fetch_movie_ratings():
+    # Example function to fetch movie ratings (you need to implement this)
+    # This function can fetch ratings from a database, another API, or any other source
+    # For demonstration purposes, we'll return dummy ratings here
+    movie_ratings = pd.Series([4.5, 3.8, 4.2, 3.9, 4.1, 3.7, 4.0, 4.3, 4.4, 3.6], name='rating')
+    return movie_ratings
 
 # Read API key from text file, no leaking keys
 keys_file = open("keys.txt")
@@ -156,14 +168,17 @@ def get_recommendations():
     # Fetch latest movies from an external API
     latest_movies = fetch_latest_movies()
 
+    # Fetch movie ratings
+    movie_ratings = fetch_movie_ratings()
+
     # Specify genres for recommendation
     genres_to_recommend = ['genres_Comedy', 'genres_Romance']  # Example list of genres
 
     # Ensure num_recommendations is a scalar value (integer)
     num_recommendations = 10  # Example value, you can replace it with the desired number
     
-    # Recommend movies based on the specified genres
-    recommended_movies, latest_movie_titles = recommend_movies_by_genres(genres_to_recommend, latest_movies, num_recommendations)
+    # Recommend movies based on the specified genres and movie ratings
+    recommended_movies, latest_movie_titles = recommend_movies_by_genres(genres_to_recommend, latest_movies, movie_ratings, num_recommendations)
 
     # Prepare response with recommended movies and latest movie titles
     response_data = {
