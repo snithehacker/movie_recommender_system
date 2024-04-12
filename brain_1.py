@@ -124,6 +124,74 @@ genre_id_to_name = {
     37: "Western"
 }
 
+# Function to fetch latest movies from an external API
+def fetch_latest_movies(genre_ids):
+    try:
+        # Read API key from text file, no leaking keys
+        with open("keys.txt") as keys_file:
+            API_KEY = keys_file.readline().rstrip()
+
+        # Construct the URL with the provided genre IDs
+        GENRES_ID_STR = "%2C".join(str(genre_id) for genre_id in genre_ids)
+        url = f"https://api.themoviedb.org/3/discover/movie?include_adult=true&include_video=false&language=en-US&page=1&sort_by=popularity.desc&with_genres={GENRES_ID_STR}"
+
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {API_KEY}"
+        }
+        
+        # Fetch data from the API
+        response = requests.get(url, headers=headers)
+        print("Response status code:", response.status_code)  # Debugging statement
+        data = response.json()
+        print("Data:", data)  # Debugging statement
+
+        # Extract results from the response
+        latest_movies = data.get('results', [])
+        return latest_movies
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching latest movies: {e}")
+        return []
+
+# Function to fetch movie ratings from the API
+def fetch_movie_ratings(genre_ids):
+    try:
+        # Read API key from text file, no leaking keys
+        with open("keys.txt") as keys_file:
+            API_KEY = keys_file.readline().rstrip()
+
+        # Construct the URL with the provided genre IDs
+        GENRES_ID_STR = "%2C".join(str(genre_id) for genre_id in genre_ids)
+        url = f"https://api.themoviedb.org/3/discover/movie?include_adult=true&include_video=false&language=en-US&page=1&sort_by=popularity.desc&with_genres={GENRES_ID_STR}"
+
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {API_KEY}"
+        }
+
+        # Fetch data from the API
+        response = requests.get(url, headers=headers)
+        print("Response status code:", response.status_code)  # Debugging statement
+        data = response.json()
+        print("Data:", data)  # Debugging statement
+
+        # Extract movie IDs and ratings from the response
+        movie_ratings = {}
+        for movie in data.get('results', []):
+            movie_id = movie.get('id')
+            rating = movie.get('vote_average')
+            if movie_id and rating:
+                adj_rating = 0.5 * rating
+                movie_ratings[str(movie_id)] = adj_rating
+        
+        # Create a pandas Series with movie IDs as index and ratings as values
+        movie_ratings_series = pd.Series(movie_ratings, name='rating')
+        return movie_ratings_series
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching movie ratings: {e}")
+        return pd.Series()  # Return an empty Series in case of an error
+
 # Function to preprocess latest movies before calculating similarity
 def preprocess_latest_movies(latest_movies, movie_ratings):
     # Initialize lists to store movie descriptions and ratings
@@ -169,48 +237,6 @@ def preprocess_latest_movies(latest_movies, movie_ratings):
 
     return combined_vectors
 
-# Function to fetch latest movies from an external API
-def fetch_latest_movies():
-    try:
-        # Read API key from text file, no leaking keys
-        with open("keys.txt") as keys_file:
-            API_KEY = keys_file.readline().rstrip()
-
-        # Example API call to fetch latest movies from The Movie Database (TMDB) API
-        response = requests.get(f'https://api.themoviedb.org/3/movie/now_playing?api_key={API_KEY}')
-        latest_movies = response.json().get('results', [])  # Access 'results' key safely
-        return latest_movies
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching latest movies: {e}")
-        return []
-
-# Function to fetch movie ratings from the API
-def fetch_movie_ratings():
-    try:
-        # Read API key from text file, no leaking keys
-        with open("keys.txt") as keys_file:
-            API_KEY = keys_file.readline().rstrip()
-
-        # Example API call to fetch movie ratings from The Movie Database (TMDB) API
-        response = requests.get(f'https://api.themoviedb.org/3/movie/now_playing?api_key={API_KEY}')
-        data = response.json()
-
-        # Extract movie IDs and ratings from the response
-        movie_ratings = {}
-        for movie in data.get('results', []):
-            movie_id = movie.get('id')
-            rating = movie.get('vote_average')
-            if movie_id and rating:
-                adj_rating = 0.5 * rating
-                movie_ratings[str(movie_id)] = adj_rating
-        
-        # Create a pandas Series with movie IDs as index and ratings as values
-        movie_ratings_series = pd.Series(movie_ratings, name='rating')
-        return movie_ratings_series
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching movie ratings: {e}")
-        return pd.Series()  # Return an empty Series in case of an error
-
 # Function to recommend movies based on a list of genres
 def recommend_movies_by_genres(genres, latest_movies, movie_ratings, num_recommendations=10):
     # Extract titles of latest movies
@@ -226,14 +252,19 @@ def recommend_movies_by_genres(genres, latest_movies, movie_ratings, num_recomme
     
     # Calculate cosine similarity for each genre separately
     for genre in genres:
+        # Convert genre ID to genre name
+        genre_name = genre_id_to_name.get(genre, "")
+        if not genre_name:
+            continue
+        
         # Filter movies by genre
-        genre_movies = [movie for movie in latest_movies if genre in [genre_id_to_name.get(g, "") for g in movie.get('genre_ids', [])]]
-        genre_indices = [i for i, movie in enumerate(latest_movies) if genre in [genre_id_to_name.get(g, "") for g in movie.get('genre_ids', [])]]
+        genre_movies = [movie for movie in latest_movies if genre_name in [genre_id_to_name.get(g, "") for g in movie.get('genre_ids', [])]]
+        genre_indices = [i for i, movie in enumerate(latest_movies) if genre_name in [genre_id_to_name.get(g, "") for g in movie.get('genre_ids', [])]]
         # Print genre movies and indices for debugging
-        print(f"Genre: {genre}, Number of Movies: {len(genre_movies)}, Genre Indices: {genre_indices}")
+        print(f"Genre: {genre_name}, Number of Movies: {len(genre_movies)}, Genre Indices: {genre_indices}")
 
         # Print the number of movies being considered
-        print(f"Number of movies being considered for {genre}: {len(genre_movies)}")
+        print(f"Number of movies being considered for {genre_name}: {len(genre_movies)}")
 
         genre_vectors = combined_vectors.iloc[genre_indices]
         
@@ -267,16 +298,16 @@ app = Flask(__name__)
 # Define API endpoint for recommending movies
 @app.route('/recommend_movies', methods=['GET'])
 def get_recommendations():
+    # Specify genres for recommendation
+    genres_to_recommend = [53, 35]  # Example list of genres
+
     # Fetch latest movies from an external API
-    latest_movies = fetch_latest_movies()
+    latest_movies = fetch_latest_movies(genres_to_recommend)
     print("Latest movies:", latest_movies)  # Debugging statement
 
     # Fetch movie ratings
-    movie_ratings = fetch_movie_ratings()
+    movie_ratings = fetch_movie_ratings(genres_to_recommend)
     print("Movies ratings:", movie_ratings)  # Debugging statement
-
-    # Specify genres for recommendation
-    genres_to_recommend = ['Comedy']  # TODO: dynamically update genres_to_recommend or remove it
 
     # Ensure num_recommendations is a scalar value (integer)
     num_recommendations = 10  # Example value, you can replace it with the desired number
