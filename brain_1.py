@@ -101,6 +101,29 @@ movie_ratings_pivot.fillna(0, inplace=True)
 # Calculate cosine similarity between movies based on their genre ratings
 movie_similarity = cosine_similarity(movie_ratings_pivot)
 
+# Genre ID to name mapping (from TMDB: https://developer.themoviedb.org/reference/genre-movie-list)
+genre_id_to_name = {
+    28: "Action",
+    12: "Adventure",
+    16: "Animation",
+    35: "Comedy",
+    80: "Crime",
+    99: "Documentary",
+    18: "Drama",
+    10751: "Family",
+    14: "Fantasy",
+    36: "History",
+    27: "Horror",
+    10402: "Music",
+    9648: "Mystery",
+    10749: "Romance",
+    878: "Science Fiction",
+    10770: "TV Movie",
+    53: "Thriller",
+    10752: "War",
+    37: "Western"
+}
+
 # Function to preprocess latest movies before calculating similarity
 def preprocess_latest_movies(latest_movies, movie_ratings):
     # Initialize lists to store movie descriptions and ratings
@@ -110,7 +133,7 @@ def preprocess_latest_movies(latest_movies, movie_ratings):
     # Iterate through the latest movies
     for movie in latest_movies:
         # Extract relevant features (title, overview, genres) and concatenate them
-        description = f"{movie['title']} {movie.get('overview', '')} {' '.join(movie.get('genres', []))}"
+        description = f"{movie['title']} {movie.get('overview', '')} {' '.join([genre_id_to_name.get(genre_id, '') for genre_id in movie.get('genre_ids', [])])}"
         # Check if the description is empty or contains only stop words
         if description.strip():
             movie_descriptions.append(description)
@@ -128,13 +151,15 @@ def preprocess_latest_movies(latest_movies, movie_ratings):
     # Calculate average rating for each genre
     genre_ratings = {}
     for movie in latest_movies:
-        for genre in movie.get('genres', []):
-            genre_ratings.setdefault(genre, []).append(movie_ratings.get(str(movie['id']), 0.0))
+        for genre_id in movie.get('genre_ids', []):
+            genre_name = genre_id_to_name.get(genre_id)
+            if genre_name:
+                genre_ratings.setdefault(genre_name, []).append(movie_ratings.get(str(movie['id']), 0.0))
 
     avg_genre_ratings = {genre: sum(ratings) / len(ratings) for genre, ratings in genre_ratings.items()}
 
     # Create a list to store the average rating for each movie's genre
-    avg_ratings = [avg_genre_ratings.get(genre, 0.0) for movie in latest_movies for genre in movie.get('genres', [])]
+    avg_ratings = [avg_genre_ratings.get(genre_id_to_name.get(genre_id), 0.0) for movie in latest_movies for genre_id in movie.get('genre_ids', [])]
 
     # Concatenate the movie vectors with the average genre ratings
     combined_vectors = pd.concat([pd.DataFrame(movie_vectors.toarray()), pd.Series(ratings, name='rating'), pd.Series(avg_ratings, name='avg_rating')], axis=1)
@@ -197,17 +222,44 @@ def recommend_movies_by_genres(genres, latest_movies, movie_ratings, num_recomme
     if combined_vectors is None:
         return [], latest_movie_titles
 
-    # Calculate cosine similarity between movies based on their genre ratings and movie ratings
-    movie_similarity = cosine_similarity(combined_vectors)
+    recommended_movies = []
+    
+    # Calculate cosine similarity for each genre separately
+    for genre in genres:
+        # Filter movies by genre
+        genre_movies = [movie for movie in latest_movies if genre in [genre_id_to_name.get(g, "") for g in movie.get('genre_ids', [])]]
+        genre_indices = [i for i, movie in enumerate(latest_movies) if genre in [genre_id_to_name.get(g, "") for g in movie.get('genre_ids', [])]]
+        # Print genre movies and indices for debugging
+        print(f"Genre: {genre}, Number of Movies: {len(genre_movies)}, Genre Indices: {genre_indices}")
 
-    # Select the movie with the highest average similarity score
-    avg_similarity = movie_similarity.mean(axis=1)
-    top_indices = avg_similarity.argsort()[::-1][:num_recommendations]
+        # Print the number of movies being considered
+        print(f"Number of movies being considered for {genre}: {len(genre_movies)}")
 
-    # Get the titles of the top recommended movies
-    recommended_movies = [latest_movies[i]['title'] for i in top_indices]
+        genre_vectors = combined_vectors.iloc[genre_indices]
+        
+        # Print genre vectors for debugging
+        print(f"Genre Vectors:\n{genre_vectors}")    
+        
+        # Check if there are movies for this genre
+        if not genre_movies:
+            continue
 
-    return recommended_movies, latest_movie_titles
+        # Calculate cosine similarity only if there are movies available
+        genre_similarity = cosine_similarity(genre_vectors)
+        print("Genre similarity matrix:", genre_similarity)  # Debugging statement
+        
+        # Select top recommendations for this genre
+        for i in range(len(genre_movies)):
+            # Get the indices of movies with highest similarity to the current movie
+            similar_movies_indices = genre_similarity[i].argsort()[-num_recommendations-1:-1][::-1]
+            # Exclude the current movie itself
+            similar_movies_indices = [index for index in similar_movies_indices if index != i]
+            # Ensure indices are within the range of genre_movies
+            similar_movies_indices = [index for index in similar_movies_indices if 0 <= index < len(genre_movies)]
+            # Add the titles of recommended movies to the list
+            recommended_movies.extend([genre_movies[index]['title'] for index in similar_movies_indices])
+
+    return recommended_movies[:num_recommendations], latest_movie_titles
 
 # Initialize Flask application
 app = Flask(__name__)
@@ -217,18 +269,22 @@ app = Flask(__name__)
 def get_recommendations():
     # Fetch latest movies from an external API
     latest_movies = fetch_latest_movies()
+    print("Latest movies:", latest_movies)  # Debugging statement
 
     # Fetch movie ratings
     movie_ratings = fetch_movie_ratings()
+    print("Movies ratings:", movie_ratings)  # Debugging statement
 
     # Specify genres for recommendation
-    genres_to_recommend = ['genres_Comedy', 'genres_Romance']  # Example list of genres
+    genres_to_recommend = ['Comedy']  # TODO: dynamically update genres_to_recommend or remove it
 
     # Ensure num_recommendations is a scalar value (integer)
     num_recommendations = 10  # Example value, you can replace it with the desired number
     
     # Recommend movies based on the specified genres and movie ratings
     recommended_movies, latest_movie_titles = recommend_movies_by_genres(genres_to_recommend, latest_movies, movie_ratings, num_recommendations)
+
+    print("Recommended movies:", recommended_movies)  # Debugging statement
 
     # Prepare response with recommended movies and latest movie titles
     response_data = {
@@ -241,11 +297,4 @@ def get_recommendations():
 if __name__ == '__main__':
     app.run(debug=True)
 
-# Example usage: Recommend movies based on a list of genres, TODO: make this a callable function instead of hardcoding movie genres
-#genres_to_recommend = ['genres_Comedy', 'genres_Romance']  # Example list of genres, nuke this
-#recommended_movies = recommend_movies_by_genres(genres_to_recommend)
-#print("Recommended Movies for Genres {}:\n".format(genres_to_recommend))
-#print(recommended_movies)
-
-# TODO: NLP and API from https://developer.themoviedb.org/docs/getting-started to fetch latest movies accordingly.
-# TODO: Frontend for prompts.
+# TODO: NLP and Frontend for prompts.
