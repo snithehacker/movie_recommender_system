@@ -4,7 +4,7 @@ import numpy as np
 import csv
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import CountVectorizer
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import requests
 
 # Replace 'your_file.csv' with the correct file path
@@ -124,6 +124,37 @@ genre_id_to_name = {
     37: "Western"
 }
 
+# Function to preprocess the user input and extract genre IDs
+def extract_genre_ids_from_text(text):
+    # Reverse the genre_id_to_name dictionary to map genre names to IDs
+    name_to_genre_id = {genre_name.lower(): genre_id for genre_id, genre_name in genre_id_to_name.items()}
+    
+    # Initialize a list to store the extracted genre IDs
+    extracted_genre_ids = []
+    
+    # Tokenize the text prompt and convert to lowercase
+    tokens = text.lower().split()
+    
+    # Check each token against the genre names (converted to lowercase) and add the corresponding IDs to the list
+    for token in tokens:
+        genre_id = name_to_genre_id.get(token)
+        if genre_id:
+            extracted_genre_ids.append(genre_id)
+    
+    return extracted_genre_ids
+
+# Function to recommend movies based on user preferences and genre similarity
+def recommend_movies(genres_to_recommend, num_recommendations=10):
+    recommended_movies = []
+    for genre in genres_to_recommend:
+        # Find movies with the highest similarity to the selected genre
+        similar_movies_indices = movie_similarity[:, genre].argsort()[-num_recommendations-1:-1][::-1]
+        # Exclude the selected genre itself
+        similar_movies_indices = similar_movies_indices[similar_movies_indices != genre]
+        # Get top recommended movies for this genre
+        recommended_movies.extend([genre_id_to_name.get(idx) for idx in similar_movies_indices])
+    return recommended_movies[:num_recommendations]
+
 # Function to fetch latest movies from an external API
 def fetch_latest_movies(genre_ids):
     try:
@@ -212,9 +243,12 @@ def preprocess_latest_movies(latest_movies, movie_ratings):
     if not movie_descriptions:
         return None
 
-    # Vectorize the movie descriptions
+    # Tokenize the movie descriptions
     vectorizer = CountVectorizer(stop_words='english')
     movie_vectors = vectorizer.fit_transform(movie_descriptions)
+
+    # Get the tokenized words
+    tokenized_words = vectorizer.get_feature_names_out()
 
     # Calculate average rating for each genre
     genre_ratings = {}
@@ -230,7 +264,7 @@ def preprocess_latest_movies(latest_movies, movie_ratings):
     avg_ratings = [avg_genre_ratings.get(genre_id_to_name.get(genre_id), 0.0) for movie in latest_movies for genre_id in movie.get('genre_ids', [])]
 
     # Concatenate the movie vectors with the average genre ratings
-    combined_vectors = pd.concat([pd.DataFrame(movie_vectors.toarray()), pd.Series(ratings, name='rating'), pd.Series(avg_ratings, name='avg_rating')], axis=1)
+    combined_vectors = pd.concat([pd.DataFrame(movie_vectors.toarray(), columns=tokenized_words), pd.Series(ratings, name='rating'), pd.Series(avg_ratings, name='avg_rating')], axis=1)
 
     # Replace NaN values with 0
     combined_vectors = combined_vectors.fillna(0)
@@ -298,8 +332,13 @@ app = Flask(__name__)
 # Define API endpoint for recommending movies
 @app.route('/recommend_movies', methods=['GET'])
 def get_recommendations():
-    # Specify genres for recommendation
-    genres_to_recommend = [53, 35]  # Example list of genres
+    # Get the text prompt from the user
+    text_prompt = request.args.get('text_prompt')
+    if not text_prompt:
+        return jsonify({'error': 'Text prompt is required'}), 400
+    
+    # Extract genres from the text prompt
+    genres_to_recommend = extract_genre_ids_from_text(text_prompt)
 
     # Fetch latest movies from an external API
     latest_movies = fetch_latest_movies(genres_to_recommend)
