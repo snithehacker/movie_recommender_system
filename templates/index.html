@@ -34,19 +34,18 @@
                 .then(response => response.json())
                 .then(data => {
                     // Clear previous recommendations
-                    document.getElementById('recommendedMovies').innerHTML = '';
+                    document.getElementById('latestMovies').innerHTML = '';
+                    document.getElementById('recommendedMovies').innerHTML = ''; // Clear recommended movies list
                     // Display latest movies
                     data.latest_movie_titles.forEach(function(movie) {
                         var li = document.createElement('li');
                         li.textContent = movie;
-                        li.classList.add('movie-title'); // Add movie title class
                         document.getElementById('latestMovies').appendChild(li);
                     });
                     // Display recommended movies
                     data.recommended_movies.forEach(function(movie) {
                         var li = document.createElement('li');
                         li.textContent = movie;
-                        li.classList.add('movie-title'); // Add movie title class
                         document.getElementById('recommendedMovies').appendChild(li);
                     });
                 })
