@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IntelliFlix</title>
+    <!-- Link to Nord theme CSS file -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='nord.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>IntelliFlix</h1>
+        <form id="recommendForm">
+            <label for="text_prompt">Enter your movie preferences:</label><br>
+            <input type="text" id="text_prompt" name="text_prompt" required><br><br>
+            <button type="submit">Get Recommendations</button>
+        </form>
+        <h2>Latest Movies</h2>
+        <ul id="latestMovies">
+            <!-- Latest movies will be displayed here -->
+        </ul>
+        <h2>Recommended Movies</h2>
+        <ul id="recommendedMovies">
+            <!-- Recommended movies will be displayed here -->
+        </ul>
+    </div>
+
+    <script>
+        // Function to handle form submission
+        document.getElementById('recommendForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            var textPrompt = document.getElementById('text_prompt').value;
+            fetch('/recommend_movies?text_prompt=' + encodeURIComponent(textPrompt))
+                .then(response => response.json())
+                .then(data => {
+                    // Clear previous recommendations
+                    document.getElementById('latestMovies').innerHTML = '';
+                    document.getElementById('recommendedMovies').innerHTML = ''; // Clear recommended movies list
+                    // Display latest movies
+                    data.latest_movie_titles.forEach(function(movie) {
+                        var li = document.createElement('li');
+                        li.textContent = movie;
+                        document.getElementById('latestMovies').appendChild(li);
+                    });
+                    // Display recommended movies
+                    data.recommended_movies.forEach(function(movie) {
+                        var li = document.createElement('li');
+                        li.textContent = movie;
+                        document.getElementById('recommendedMovies').appendChild(li);
+                    });
+                })
+                .catch(error => console.error('Error:', error));
+        });
+    </script>
+</body>
+</html>
