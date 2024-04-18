@@ -4,7 +4,7 @@ import numpy as np
 import csv
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import CountVectorizer
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 import requests
 
 # Replace 'your_file.csv' with the correct file path
@@ -327,7 +327,7 @@ def recommend_movies_by_genres(genres, latest_movies, movie_ratings, num_recomme
     return recommended_movies[:num_recommendations], latest_movie_titles
 
 # Initialize Flask application
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
 
 # Define API endpoint for recommending movies
 @app.route('/recommend_movies', methods=['GET'])
@@ -364,7 +364,10 @@ def get_recommendations():
 
     return jsonify(response_data)
 
+# Route to render the HTML page
+@app.route('/')
+def index():
+    return render_template('index.html')
+
 if __name__ == '__main__':
     app.run(debug=True)
-
-# TODO: NLP and Frontend for prompts.
