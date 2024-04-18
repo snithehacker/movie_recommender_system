@@ -144,16 +144,16 @@ def extract_genre_ids_from_text(text):
     return extracted_genre_ids
 
 # Function to recommend movies based on user preferences and genre similarity
-def recommend_movies(genres_to_recommend, num_recommendations=10):
+def recommend_movies(genres_to_recommend):
     recommended_movies = []
     for genre in genres_to_recommend:
         # Find movies with the highest similarity to the selected genre
-        similar_movies_indices = movie_similarity[:, genre].argsort()[-num_recommendations-1:-1][::-1]
+        similar_movies_indices = movie_similarity[:, genre].argsort()[::-1]
         # Exclude the selected genre itself
         similar_movies_indices = similar_movies_indices[similar_movies_indices != genre]
-        # Get top recommended movies for this genre
+        # Get recommended movies for this genre
         recommended_movies.extend([genre_id_to_name.get(idx) for idx in similar_movies_indices])
-    return recommended_movies[:num_recommendations]
+    return recommended_movies
 
 # Function to fetch latest movies from an external API
 def fetch_latest_movies(genre_ids):
@@ -272,7 +272,7 @@ def preprocess_latest_movies(latest_movies, movie_ratings):
     return combined_vectors
 
 # Function to recommend movies based on a list of genres
-def recommend_movies_by_genres(genres, latest_movies, movie_ratings, num_recommendations=10):
+def recommend_movies_by_genres(genres, latest_movies, movie_ratings):
     # Extract titles of latest movies
     latest_movie_titles = [movie['title'] for movie in latest_movies]
 
@@ -316,7 +316,7 @@ def recommend_movies_by_genres(genres, latest_movies, movie_ratings, num_recomme
         # Select top recommendations for this genre
         for i in range(len(genre_movies)):
             # Get the indices of movies with highest similarity to the current movie
-            similar_movies_indices = genre_similarity[i].argsort()[-num_recommendations-1:-1][::-1]
+            similar_movies_indices = genre_similarity[i].argsort()[::-1]
             # Exclude the current movie itself
             similar_movies_indices = [index for index in similar_movies_indices if index != i]
             # Ensure indices are within the range of genre_movies
@@ -324,7 +324,10 @@ def recommend_movies_by_genres(genres, latest_movies, movie_ratings, num_recomme
             # Add the titles of recommended movies to the list
             recommended_movies.extend([genre_movies[index]['title'] for index in similar_movies_indices])
 
-    return recommended_movies[:num_recommendations], latest_movie_titles
+    # Ensure only 10 movies are recommended
+    recommended_movies = recommended_movies
+
+    return recommended_movies, latest_movie_titles
 
 # Initialize Flask application
 app = Flask(__name__, template_folder="templates")
@@ -348,11 +351,8 @@ def get_recommendations():
     movie_ratings = fetch_movie_ratings(genres_to_recommend)
     print("Movies ratings:", movie_ratings)  # Debugging statement
 
-    # Ensure num_recommendations is a scalar value (integer)
-    num_recommendations = 10  # Example value, you can replace it with the desired number
-    
     # Recommend movies based on the specified genres and movie ratings
-    recommended_movies, latest_movie_titles = recommend_movies_by_genres(genres_to_recommend, latest_movies, movie_ratings, num_recommendations)
+    recommended_movies, latest_movie_titles = recommend_movies_by_genres(genres_to_recommend, latest_movies, movie_ratings)
 
     print("Recommended movies:", recommended_movies)  # Debugging statement
 
