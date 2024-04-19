@@ -7,7 +7,7 @@ from sklearn.feature_extraction.text import CountVectorizer
 from flask import Flask, jsonify, request, render_template
 import requests
 
-# Replace 'your_file.csv' with the correct file path
+# Replace 'movie_dataset.csv' with the correct file path
 file_path = "/home/forenche/Music/movie_dataset.csv"
 
 # Read the CSV file into a list of lists, skipping lines with too many fields
