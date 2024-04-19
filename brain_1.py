@@ -23,11 +23,13 @@ with open(file_path, 'r', encoding='utf-8') as file:
 # Convert the list of lists to a DataFrame
 df = pd.DataFrame(data)
 
+# Print columns
 print("Printing columns",df.columns)
 
 # Display the DataFrame
 print(df)
 
+# Debug statements
 print("DESCRIE\n")
 print(df.describe)
 print("HEAD\n")
